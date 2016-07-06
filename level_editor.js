@@ -21,11 +21,16 @@ var ad = 8;
 var sc = 0;
 // Useful key codes.
 var kc = {
-    left: 37, right: 39,
-    up: 38, down: 40,
-    space: 32,
     w: 87, a: 65, s: 83, d: 68,
+    shift: 16, space: 32,
     x: 88,
+};
+// Controls settings. All variables here should reference kc.
+var ct = {
+    left: kc.a, right: kc.d, up: kc.w, down: kc.s,
+    fastscroll: kc.shift,
+    del: kc.x,
+    code: kc.space,
 };
 
 /**
@@ -166,13 +171,26 @@ var gameArea = {
                 gameArea.m = false;
         });
         window.addEventListener("mousedown", function(evt) {
-            gameArea.m = true;
-            if(gameArea.mx > CWP || gameArea.mx < 0 ||
-                    gameArea.my > CHP || gameArea.my < 0)
-                gameArea.m = false;
+            if(evt.button === 0) {
+                gameArea.m = true;
+                if(gameArea.mx > CWP || gameArea.mx < 0 ||
+                        gameArea.my > CHP || gameArea.my < 0)
+                    gameArea.m = false;
+            } else if(evt.button === 2) {
+                gameArea.mrt = true;
+                if(gameArea.mx > CWP || gameArea.mx < 0 ||
+                        gameArea.my > CHP || gameArea.my < 0)
+                    gameArea.mrt = false;
+            }
         });
         window.addEventListener("mouseup", function(evt) {
-            gameArea.m = false;
+            if(evt.button === 0)
+                gameArea.m = false;
+            else if(evt.button === 2)
+                gameArea.mrt = false;
+        });
+        window.addEventListener("contextmenu", function(evt) {
+            evt.preventDefault();
         });
     }
 };
@@ -215,13 +233,13 @@ var viewArea = {
     },
     update: function() {
         scrollSpeed = 2;
-        if(gameArea.keys && gameArea.keys[kc.a]) {
+        if(gameArea.keys && gameArea.keys[ct.fastscroll]) {
             scrollSpeed = 8;
         }
-        if(gameArea.keys && gameArea.keys[kc.left]) {
+        if(gameArea.keys && gameArea.keys[ct.left]) {
             this.x += -scrollSpeed;
         }
-        if(gameArea.keys && gameArea.keys[kc.right]) {
+        if(gameArea.keys && gameArea.keys[ct.right]) {
             this.x += scrollSpeed;
         }
         if(this.x < 0) {
@@ -515,7 +533,7 @@ function update() {
     if(gameArea.m && !m.toggled) {
         x = Math.floor((gameArea.mx + viewArea.x) / 16);
         y = Math.floor((gameArea.my + viewArea.y) / 16);
-        if(!(gameArea.keys && gameArea.keys[kc.x])) {
+        if(!(gameArea.keys && gameArea.keys[ct.del])) {
             if(pen.type === pen.types.CT || pen.type === pen.types.T)
                 level.placeTile(x, y, pen.get(x, y));
             else if(pen.type === pen.types.S)
@@ -527,14 +545,14 @@ function update() {
                 level.removeSprite(x, y);
         }
     }
-    if(gameArea.keys && gameArea.keys[kc.w] && m.canToggle) {
+    if(gameArea.mrt && m.canToggle) {
         m.toggle();
         m.canToggle = false;
-    } else if(!gameArea.keys[kc.w]) {
+    } else if(!gameArea.mrt) {
         m.canToggle = true;
     }
     m.update();
-    if(gameArea.keys && gameArea.keys[kc.d]) {
+    if(gameArea.keys && gameArea.keys[ct.code]) {
         generateCode();
     }
     sc++;
