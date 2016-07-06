@@ -18,6 +18,7 @@ h1 {
     margin: inherit;
 }
 p, pre {
+    text-align: center;
     margin: inherit;
 }
 textarea#level-code {
