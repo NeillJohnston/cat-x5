@@ -17,7 +17,7 @@ div.graybg {
 h1 {
     margin: inherit;
 }
-p, pre {
+p {
     margin: inherit;
 }
 textarea#level-code {

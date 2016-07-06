@@ -616,7 +616,7 @@ function generateCode() {
 function loadCode() {
     lvlStr = document.getElementById("level-code").value;
     console.log("Loading... \n" + lvlStr);
-
+    
 };
 
 // --- Math functions that aren't included in Javascript Math (for whatever reason). ---
