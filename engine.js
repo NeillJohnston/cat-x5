@@ -237,7 +237,7 @@ function Particle(x, y, s, animLoop) {
                 this.sx = this.animLoop[this.animIndex][0];
                 this.sy = this.animLoop[this.animIndex][1];
             } catch(err) {
-                
+
             }
         }
     };
@@ -650,7 +650,7 @@ function loadPlayer(x, y) {
         }
         // Accelerate dy with gravity.
         this.dy = accelTo(this.dy, this.maxDy, gravity);
-        
+
         // TEST: Falling out of world!
         if(this.y > 12 * 16) {
             this.x = this.ox;
