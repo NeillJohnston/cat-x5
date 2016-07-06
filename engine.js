@@ -237,7 +237,7 @@ function Particle(x, y, s, animLoop) {
                 this.sx = this.animLoop[this.animIndex][0];
                 this.sy = this.animLoop[this.animIndex][1];
             } catch(err) {
-                
+
             }
         }
     };
@@ -581,7 +581,7 @@ function loadPlayer(x, y) {
         // Handle [left] movement.
         if(gameArea.keys && gameArea.keys[ct.left]) {
             if(this.running && !this.charging)
-                this.dx = accelTo(this.dx, -2.5, -.50);
+                this.dx = accelTo(this.dx, -2.0, -.40);
             else
                 this.dx = accelTo(this.dx, -1.5, -.30);
             this.facing = "left";
@@ -589,7 +589,7 @@ function loadPlayer(x, y) {
         // Handle [right] movement.
         if(gameArea.keys && gameArea.keys[ct.right]) {
             if(this.running && !this.charging)
-                this.dx = accelTo(this.dx, 2.5, .50);
+                this.dx = accelTo(this.dx, 2.0, .40);
             else
                 this.dx = accelTo(this.dx, 1.5, .30);
             this.facing = "right";
@@ -612,7 +612,7 @@ function loadPlayer(x, y) {
             if(this.dy < 0)
                 this.dy += -gravity * .40;
             if(this.dy > 0)
-                this.dy += -gravity * .60;
+                this.dy += -gravity * .40;
         } else if(!gameArea.keys[ct.jump]) {
             this.canJump = true;
         }
@@ -650,7 +650,7 @@ function loadPlayer(x, y) {
         }
         // Accelerate dy with gravity.
         this.dy = accelTo(this.dy, this.maxDy, gravity);
-        
+
         // TEST: Falling out of world!
         if(this.y > 12 * 16) {
             this.x = this.ox;
