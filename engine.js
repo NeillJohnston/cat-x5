@@ -10,9 +10,9 @@
  * @global
  */
 // Canvas default width and height in tiles.
-var CW = 10; var CH = 10;
+var CW = 12; var CH = 10;
 // Canvas default width and height in pixels.
-var CWP = 160; var CHP = 160;
+var CWP = 16 * CW; var CHP = 16 * CH;
 // Zoom (scale) level. Defines the scale of the canvas.
 var zm = 2;
 // Animation delay. Wait this many frames before the next anim step.
@@ -130,7 +130,17 @@ var viewArea = {
         gameArea.ctx.clearRect(0, 0,
                 gameArea.canvas.width, gameArea.canvas.height
         );
-    }
+    },
+    update: function() {
+        this.clear();
+        this.x = player.x - CWP / 2 + 8;
+        if(this.x < 0) {
+            this.x = 0;
+        } else if(this.x > level.w * 16 - CWP) {
+            this.x = level.w * 16 - CWP;
+        }
+
+    },
 };
 
 /**
@@ -139,13 +149,7 @@ var viewArea = {
  * Objects are updated in that order or else they would be drawn out of order.
  */
 function update() {
-    viewArea.clear();
-    viewArea.x = player.x - 72;
-    if(viewArea.x < 0) {
-        viewArea.x = 0;
-    } else if(viewArea.x > level.w * 16 - CWP) {
-        viewArea.x = level.w * 16 - CWP;
-    }
+    viewArea.update();
     if(level.bg) {
         level.bg.update();
     }
@@ -369,22 +373,314 @@ function ConnectedTile(x, y, s) {
  * @param {Number} sy - Grid coordinates of the texture in the graphics sheet.
  * @param blockType
  */
-function BreakableTile(x, y, s, sx, sy, type) {
-    /**
-     *
-     */
-    breakableTypes = {
-        crate: {s: gfx.particles, animLoop: [[0, 1], [1, 1]]},
-    }
-    type = breakableTypes[type];
+function BreakableTile(x, y, s, sx, sy, onBreak) {
     // Create the tile.
     t = new Tile(x, y, s, sx, sy);
+    t.onBreak = onBreak;
     t.breakable = true;
     t.break = function() {
-        level.sprites.push(new Particle(this.x, this.y, type.s, type.animLoop));
-        level.tiles[this.x / 16][this.y / 16] = false;
+        onBreak(this);
+        level.tiles[Math.floor(this.x / 16)][Math.floor(this.y / 16)] = false;
     };
     return t;
+}
+
+/**
+ * A 2-layer parallax background.
+ * @constructor
+ * @param {Image} s - The texture sheet to use for this background. Unlike other texture sheets, this is split into two 64x128 halves.
+ */
+function Background(s) {
+    this.xf = 0; this.yf = CHP - 128;
+    this.xb = 0; this.yb = 0;
+    this.s = s;
+    this.update = function() {
+        this.xf = viewArea.x / 2;
+        this.xb = viewArea.x / 4;
+        for(var x = -64; x <= CWP + 64; x += 64) {
+            x_ = x + viewArea.x;
+            viewArea.drawImg(x_ - this.xb % 64, this.yb, this.s, 0, 0, 64, 128);
+        }
+        for(var x = -64; x <= CWP + 64; x += 64) {
+            x_ = x + viewArea.x;
+            viewArea.drawImg(x_ - this.xf % 64, this.yf, this.s, 4, 0, 64, 128);
+        }
+    };
+}
+
+// --- Constructor functions for specific types of tiles and sprites. ---
+
+/**
+ * Construct default tiles.
+ * @constructor
+ * @param {String} t - The type to use from within the tileTypes var.
+ * @param {Number} x - Tile coordinates.
+ * @param {Number} y - Tile coordinates.
+ * @param extra - Just in case.
+ */
+function tileConstructor(t, x, y, extra) {
+    tileTypes = {
+        nature_ct: function(x, y) {
+            return new ConnectedTile(x, y, gfx.nature);
+        },
+        nature_crate: function(x, y, breakableType) {
+            return new BreakableTile(x, y, gfx.nature, 0, 7, function(t) {
+                level.sprites.push(particleConstructor("crateDestroy", t.x, t.y));
+            });
+        },
+        _ : function(x, y) { return new Tile(x, y, gfx._, 0, 0); },
+    }
+    return tileTypes[t](x, y, extra);
+}
+
+/**
+ * Construct default sprites.
+ * @constructor
+ * @param {String} t - The type to use from within the spriteTypes var.
+ * @param {Number} x - Tile coordinates.
+ * @param {Number} y - Tile coordinates.
+ * @param extra - Just in case.
+ */
+function spriteConstructor(t, x, y, extra) {
+    spriteTypes = {
+        player: function(x, y) {
+            p = new Sprite(x, y, gfx.cat, 0, 0);
+            p.ox = x; p.oy = y;
+            p.hb = {
+                x: 1, y: 4,
+                w: 14, h: 12
+            };
+            p.animLoop = [[0, 0], [0, 0], [0, 1], [0, 1]];
+            p.facing = "right";
+            // Speeds of player's various actions.
+            p.walkSpeed = 1.50;
+            p.runSpeed = 2.50;
+            p.walkAccel = .20;
+            p.runAccel = .30;
+            p.maxDy = 6;
+            /**
+             * Shoot a LAZOR.
+             * @param {Number} t: How long (in frames) this laser was being charged. Determines speed of the laser with speed.
+             */
+            p.shoot = function(t) {
+                laser = new Sprite(this.x, this.y, gfx.cat, 2, 4);
+                level.sprites.push(laser);
+                laser.hb = {
+                    x: 6, y: 6,
+                    w: 4, h: 4
+                };
+                // Return the laser's speed as
+                speed = 2 * (Math.floor((Math.min(t, 60) / 30)) + 1);
+                if(this.facing === "left")
+                    laser.dx = -speed;
+                else if(this.facing === "right")
+                    laser.dx = speed;
+                // When a laser goes off-screen or hits a tile, it dies.
+                laser.updateExtra = function() {
+                    if(this.x < viewArea.x - 32 || this.x > viewArea.x + 192)
+                        level.sprites.splice(level.sprites.indexOf(this), 1);
+                    n = getNeighbors(this.x / 16, this.y / 16);
+                    n.forEach( function(t) {
+                        if(col(this, t)) {
+                            if(t.breakable)
+                                t.break();
+                            level.sprites.push(particleConstructor("laserDestroy", this.x, this.y));
+                            level.sprites.splice(level.sprites.indexOf(this), 1);
+                        }
+                    }.bind(this));
+                }.bind(laser);
+            }
+            /**
+             * Player's updateExtra controls most of its functionality.
+             */
+            p.updateExtra = function() {
+                // Check for collisions with tiles.
+                getNeighbors(Math.floor(this.x / 16), Math.floor(this.y / 16))
+                        .forEach( function(t) {
+                    colObj = col(this, t);
+                    if(colObj) {
+                        minSide = Math.min(colObj.left, colObj.right, colObj.upper, colObj.lower);
+                        if(minSide === colObj.upper && this.dy < 0 && Math.abs(colObj.upper - Math.min(colObj.left, colObj.right)) > .5) {
+                            this.dy = 0;
+                            this.y += minSide;
+                        } else if(minSide === colObj.lower && this.dy > 0) {
+                            this.dy = 0;
+                            this.y += -minSide;
+                        } else if(minSide === colObj.left && this.dx < 0) {
+                            this.dx = 0;
+                            this.x += minSide;
+                        } else if(minSide === colObj.right && this.dx > 0) {
+                            this.dx = 0;
+                            this.x += -minSide;
+                        }
+                    }
+                }.bind(this));
+                // Handle [run] key.
+                if(gameArea.keys && gameArea.keys[ct.run])
+                    this.running = true;
+                else
+                    this.running = false;
+                // Handle [shoot] key.
+                if(gameArea.keys && gameArea.keys[ct.shoot]) {
+                    if((this.shootCoolDown && this.shootCoolDown <= sc && this.shootCoolDown > 0) || !this.shootCoolDown) {
+                        this.charging = sc;
+                        this.shootCoolDown = -1;
+                    }
+                } else if(!gameArea.keys[ct.shoot]) {
+                    if(this.charging) {
+                        this.shoot(sc - this.charging);
+                        this.shootCoolDown = sc + 30;
+                        if(this.dy > -1)
+                            this.dy += -Math.floor(Math.min(sc - this.charging, 60) / 30) * 1.50;
+                    }
+                    this.charging = false;
+                }
+                // Handle [left] movement.
+                if(gameArea.keys && gameArea.keys[ct.left]) {
+                    if(this.running && !this.charging)
+                        this.dx = accelTo(this.dx, -this.runSpeed, -this.runAccel);
+                    else
+                        this.dx = accelTo(this.dx, -this.walkSpeed, -this.walkAccel);
+                    this.facing = "left";
+                }
+                // Handle [right] movement.
+                if(gameArea.keys && gameArea.keys[ct.right]) {
+                    if(this.running && !this.charging)
+                        this.dx = accelTo(this.dx, this.runSpeed, this.runAccel);
+                    else
+                        this.dx = accelTo(this.dx, this.walkSpeed, this.walkAccel);
+                    this.facing = "right";
+                }
+                // Handle no movement keys.
+                if(!gameArea.keys[ct.left] && !gameArea.keys[ct.right]) {
+                    if(this.dx < 0)
+                        this.dx = accelTo(this.dx, 0, .40);
+                    else if(this.dx > 0)
+                        this.dx = accelTo(this.dx, 0, -.40);
+                }
+                // Handle [jump] key.
+                if(gameArea.keys && gameArea.keys[ct.jump]) {
+                    n = getNeighbors(Math.floor((this.x + 8) / 16), Math.floor((this.y + 8) / 16));
+                    if(this.dy === 0 && (n[2] || n[5] || n[8]) && Math.round(this.y) % 16 === 0 && this.canJump) {
+                        this.dy = -4.00;
+                        this.canJump = false;
+                    }
+                    // Float a bit if holding [jump].
+                    if(this.dy < 0)
+                        this.dy += -gravity * .40;
+                    if(this.dy > 0)
+                        this.dy += -gravity * .40;
+                } else if(!gameArea.keys[ct.jump]) {
+                    this.canJump = true;
+                }
+                // Handle [crouch] key.
+                this.crouching = false;
+                if(gameArea.keys && gameArea.keys[ct.crouch]) {
+                    this.crouching = true;
+                    this.dx = 0;
+                }
+                // Change animation loop.
+                if(this.charging) {
+                    // Laser charging animation.
+                    if(this.facing === "left")
+                        this.animLoop = [[0, 4], [0, 4], [0, 5], [0, 5]];
+                    else if(this.facing === "right")
+                        this.animLoop = [[1, 4], [1, 4], [1, 5], [1, 5]];
+                } else if(this.crouching) {
+                    // Crouching animation.
+                    if(this.facing === "left")
+                        this.animLoop = [[0, 3]];
+                    else if(this.facing === "right")
+                        this.animLoop = [[1, 3]];
+                } else if(this.dy < 0) {
+                    // Going up animation.
+                    if(this.facing === "left")
+                        this.animLoop = [[0, 2]];
+                    else if(this.facing === "right")
+                        this.animLoop = [[1, 2]];
+                } else {
+                    // Normal walking/idle animation.
+                    if(this.facing === "left")
+                        this.animLoop = [[0, 0], [0, 0], [0, 1], [0, 1]];
+                    else if(this.facing === "right")
+                        this.animLoop = [[1, 0], [1, 0], [1, 1], [1, 1]];
+                }
+                // Accelerate dy with gravity.
+                this.dy = accelTo(this.dy, this.maxDy, gravity);
+
+                // TEST: Falling out of world!
+                if(this.y > 12 * 16) {
+                    this.x = this.ox;
+                    this.y = this.oy;
+                }
+            };
+            player = p;
+            return p;
+        },
+        _: function(x, y) {},
+    }
+    return spriteTypes[t](x, y, extra);
+}
+
+/**
+ * Construct default particles.
+ * @constructor
+ * @param {String} particleType - The type to use from within the particleTypes var.
+ * @param {Number} x - Tile coordinates.
+ * @param {Number} y - Tile coordinates.
+ * @param extra - Just in case.
+ */
+function particleConstructor(t, x, y, extra) {
+    particleTypes = {
+        laserDestroy: function(x, y) { return new Particle(x, y, gfx.particles, [[0, 0], [1, 0]]); },
+        crateDestroy: function(x, y) { return new Particle(x, y, gfx.particles, [[1, 0], [1, 1]]); },
+        _: function(x, y) {},
+    };
+    return particleTypes[t](x, y, extra);
+}
+
+/**
+ * Load an image from the specified source. Used to generate gfx before everything else loads.
+ * @param {String} src - File path of the image source.
+ * @returns {Image} The newly created image.
+ */
+function loadImage(src) {
+    img = new Image();
+    img.src = src;
+    return img;
+}
+
+// --- TESTING PURPOSES ONLY ---
+testLevel();
+// ---
+
+// --- Functions important to the game logic/detection/etc. ---
+
+/**
+ * Get the surrounding 8 "neighbor" tiles of the specified tile coordinates.
+ * @param {Number} x - Tile coordinates to be checked.
+ * @param {Number} y - Tile coordinates to be checked.
+ * @param {Image} s - Optional texture sheet. If included, the function assumes that the only relevant neighbors are ConnectedTiles with the same texture sheet.
+ */
+function getNeighbors(x, y, s) {
+    neighbors = [];
+    x = Math.floor(x); y = Math.floor(y);
+    [-1, 0, 1].forEach( function(dx) {
+        [-1, 0, 1].forEach( function(dy) {
+            if(level.tiles[x + dx] && level.tiles[x + dx][y + dy]) {
+                if((s && s === level.tiles[x + dx][y + dy].s &&
+                        level.tiles[x + dx][y + dy].connected) ||
+                        !s) {
+                    neighbors.push(level.tiles[x + dx][y + dy]);
+                } else {
+                    neighbors.push(false);
+                }
+            } else {
+                neighbors.push(false);
+            }
+        });
+    });
+    return neighbors;
 }
 
 /**
@@ -419,245 +715,6 @@ function col(a, b) {
             upper: by + bh - ay, lower: ay + ah - by
         };
     }
-}
-
-/**
- * A 2-layer parallax background.
- * @constructor
- * @param {Image} s - The texture sheet to use for this background. Unlike other texture sheets, this is split into two 64x128 halves.
- */
-function Background(s) {
-    this.xf = 0; this.yf = 32;
-    this.xb = 0; this.yb = 0;
-    this.s = s;
-    this.update = function() {
-        this.xf = viewArea.x / 2;
-        this.xb = viewArea.x / 4;
-        [-64, 0, 64, 128, 192].forEach( function(x) {
-            x += viewArea.x;
-            viewArea.drawImg(x - this.xb % 64, this.yb, this.s, 0, 0, 64, 128);
-        }.bind(this));
-        [-64, 0, 64, 128, 192].forEach( function(x) {
-            x += viewArea.x;
-            viewArea.drawImg(x - this.xf % 64, this.yf, this.s, 4, 0, 64, 128);
-        }.bind(this));
-    };
-}
-
-/**
- * Load an image from the specified source. Used to generate gfx before everything else loads.
- * @param {String} src - File path of the image source.
- * @returns {Image} The newly created image.
- */
-function loadImage(src) {
-    img = new Image();
-    img.src = src;
-    return img;
-}
-
-// --- TESTING PURPOSES ONLY ---
-testLevel();
-// ---
-
-/**
- * Get the surrounding 8 "neighbor" tiles of the specified tile coordinates.
- * @param {Number} x - Tile coordinates to be checked.
- * @param {Number} y - Tile coordinates to be checked.
- * @param {Image} s - Optional texture sheet. If included, the function assumes that the only relevant neighbors are ConnectedTiles with the same texture sheet.
- */
-function getNeighbors(x, y, s) {
-    neighbors = [];
-    x = Math.floor(x); y = Math.floor(y);
-    [-1, 0, 1].forEach( function(dx) {
-        [-1, 0, 1].forEach( function(dy) {
-            if(level.tiles[x + dx] && level.tiles[x + dx][y + dy]) {
-                if((s && s === level.tiles[x + dx][y + dy].s &&
-                        level.tiles[x + dx][y + dy].connected) ||
-                        !s) {
-                    neighbors.push(level.tiles[x + dx][y + dy]);
-                } else {
-                    neighbors.push(false);
-                }
-            } else {
-                neighbors.push(false);
-            }
-        });
-    });
-    return neighbors;
-}
-
-/**
- * Loads the player into the world. This function exists primarily because of laziness.
- * @param {Number} x - Sprite coordinates.
- * @param {Number} y - Sprite coordinates.
- */
-function loadPlayer(x, y) {
-    player = new Sprite(x, y, gfx.cat, 0, 0);
-    player.ox = x; player.oy = y;
-    player.hb = {
-        x: 1, y: 4,
-        w: 14, h: 12
-    };
-    player.animLoop = [[0, 0], [0, 0], [0, 1], [0, 1]];
-    player.facing = "right";
-    player.maxDy = 6;
-    /**
-     * Shoot a LAZOR.
-     * @param {Number} t: How long (in frames) this laser was being charged. Determines speed of the laser with speed.
-     */
-    player.shoot = function(t) {
-        laser = new Sprite(this.x, this.y, gfx.cat, 2, 4);
-        level.sprites.push(laser);
-        laser.hb = {
-            x: 6, y: 6,
-            w: 4, h: 4
-        };
-        // Return the laser's speed as
-        speed = 2 * (Math.floor((Math.min(t, 60) / 30)) + 1);
-        if(this.facing === "left")
-            laser.dx = -speed;
-        else if(this.facing === "right")
-            laser.dx = speed;
-        // When a laser goes off-screen or hits a tile, it dies.
-        laser.updateExtra = function() {
-            if(this.x < viewArea.x - 32 || this.x > viewArea.x + 192)
-                level.sprites.splice(level.sprites.indexOf(this), 1);
-            n = getNeighbors(this.x / 16, this.y / 16);
-            n.forEach( function(t) {
-                if(col(this, t)) {
-                    if(t.breakable)
-                        t.break();
-                    level.sprites.push(new Particle(this.x, this.y, gfx.particles, [[0, 0], [1, 0]]));
-                    level.sprites.splice(level.sprites.indexOf(this), 1);
-                }
-            }.bind(this));
-        }.bind(laser);
-    }
-    /**
-     * Player's updateExtra controls most of its functionality.
-     */
-    player.updateExtra = function() {
-        // Check for collisions with tiles.
-        getNeighbors(Math.floor(this.x / 16), Math.floor(this.y / 16))
-                .forEach( function(t) {
-            colObj = col(this, t);
-            if(colObj) {
-                minSide = Math.min(colObj.left, colObj.right, colObj.upper, colObj.lower);
-                if(minSide === colObj.upper && this.dy < 0 && Math.abs(colObj.upper - Math.min(colObj.left, colObj.right)) > .5) {
-                    this.dy = 0;
-                    this.y += minSide;
-                } else if(minSide === colObj.lower && this.dy > 0) {
-                    this.dy = 0;
-                    this.y += -minSide;
-                } else if(minSide === colObj.left && this.dx < 0) {
-                    this.dx = 0;
-                    this.x += minSide;
-                } else if(minSide === colObj.right && this.dx > 0) {
-                    this.dx = 0;
-                    this.x += -minSide;
-                }
-            }
-        }.bind(this));
-        // Handle [run] key.
-        if(gameArea.keys && gameArea.keys[ct.run])
-            this.running = true;
-        else
-            this.running = false;
-        // Handle [shoot] key.
-        if(gameArea.keys && gameArea.keys[ct.shoot]) {
-            if((this.shootCoolDown && this.shootCoolDown <= sc && this.shootCoolDown > 0) || !this.shootCoolDown) {
-                this.charging = sc;
-                this.shootCoolDown = -1;
-            }
-        } else if(!gameArea.keys[ct.shoot]) {
-            if(this.charging) {
-                this.shoot(sc - this.charging);
-                this.shootCoolDown = sc + 30;
-                if(this.dy > -1)
-                    this.dy += -Math.floor(Math.min(sc - this.charging, 60) / 30) * 1.50;
-            }
-            this.charging = false;
-        }
-        // Handle [left] movement.
-        if(gameArea.keys && gameArea.keys[ct.left]) {
-            if(this.running && !this.charging)
-                this.dx = accelTo(this.dx, -2.0, -.40);
-            else
-                this.dx = accelTo(this.dx, -1.5, -.30);
-            this.facing = "left";
-        }
-        // Handle [right] movement.
-        if(gameArea.keys && gameArea.keys[ct.right]) {
-            if(this.running && !this.charging)
-                this.dx = accelTo(this.dx, 2.0, .40);
-            else
-                this.dx = accelTo(this.dx, 1.5, .30);
-            this.facing = "right";
-        }
-        // Handle no movement keys.
-        if(!gameArea.keys[ct.left] && !gameArea.keys[ct.right]) {
-            if(this.dx < 0)
-                this.dx = accelTo(this.dx, 0, .40);
-            else if(this.dx > 0)
-                this.dx = accelTo(this.dx, 0, -.40);
-        }
-        // Handle [jump] key.
-        if(gameArea.keys && gameArea.keys[ct.jump]) {
-            n = getNeighbors(Math.floor((this.x + 8) / 16), Math.floor((this.y + 8) / 16));
-            if(this.dy === 0 && (n[2] || n[5] || n[8]) && this.canJump) {
-                this.dy = -4.00;
-                this.canJump = false;
-            }
-            // Float a bit if holding [jump].
-            if(this.dy < 0)
-                this.dy += -gravity * .40;
-            if(this.dy > 0)
-                this.dy += -gravity * .40;
-        } else if(!gameArea.keys[ct.jump]) {
-            this.canJump = true;
-        }
-        // Handle [crouch] key.
-        this.crouching = false;
-        if(gameArea.keys && gameArea.keys[ct.crouch]) {
-            this.crouching = true;
-            this.dx = 0;
-        }
-        // Change animation loop.
-        if(this.charging) {
-            // Laser charging animation.
-            if(this.facing === "left")
-                this.animLoop = [[0, 4], [0, 4], [0, 5], [0, 5]];
-            else if(this.facing === "right")
-                this.animLoop = [[1, 4], [1, 4], [1, 5], [1, 5]];
-        } else if(this.crouching) {
-            // Crouching animation.
-            if(this.facing === "left")
-                this.animLoop = [[0, 3]];
-            else if(this.facing === "right")
-                this.animLoop = [[1, 3]];
-        } else if(this.dy < 0) {
-            // Going up animation.
-            if(this.facing === "left")
-                this.animLoop = [[0, 2]];
-            else if(this.facing === "right")
-                this.animLoop = [[1, 2]];
-        } else {
-            // Normal walking/idle animation.
-            if(this.facing === "left")
-                this.animLoop = [[0, 0], [0, 0], [0, 1], [0, 1]];
-            else if(this.facing === "right")
-                this.animLoop = [[1, 0], [1, 0], [1, 1], [1, 1]];
-        }
-        // Accelerate dy with gravity.
-        this.dy = accelTo(this.dy, this.maxDy, gravity);
-
-        // TEST: Falling out of world!
-        if(this.y > 12 * 16) {
-            this.x = this.ox;
-            this.y = this.oy;
-        }
-    };
-    level.sprites.push(player);
 }
 
 // --- Test level generators. ---
@@ -716,21 +773,27 @@ function loadCode() {
     lvlStr = lvlStr.split("\n");
     level.w = parseInt(lvlStr[0].split(",")[0]);
     level.h = parseInt(lvlStr[0].split(",")[1]);
-    for(var i = 0; i < lvlStr[1].length; i+=2) {
-        x = Math.floor((i / 2) / level.h);
-        y = (i / 2) % level.h;
-        if(!level.tiles[x])
-            level.tiles[x] = [];
-        if(lvlStr[1].substring(i, i + 2) !== "__")
-            level.tiles[x][y] = lvlStrCodes.getTile(lvlStr[1].substring(i, i + 2), x, y);
-    }
-    for(var i = 0; i < lvlStr[2].length; i+=2) {
-        x = Math.floor((i / 2) / level.h);
-        y = (i / 2) % level.h;
-        if(lvlStr[2].substring(i, i + 2) !== "__") {
-            lvlStrCodes.getSprite(lvlStr[2].substring(i, i + 2), x * 16, y * 16);
+    x = 0; y = 0;
+    lvlStr[1].split(",").forEach( function(elem) {
+        code = elem.split("*")[0];
+        count = parseInt(elem.split("*")[1]);
+        for(var n = 0; n < count; n++) {
+            if(!level.tiles[x])
+                level.tiles[x] = [];
+            if(code !== "_")
+                level.tiles[x][y] = tileConstructor(code, x, y);
+            y = (y + 1) % CH;
+            x += Math.floor((y + 1) / CH);
         }
-    }
+    });
+    x = 0; y = 0;
+    lvlStr[2].split(",").forEach( function(elem) {
+        code = elem;
+        if(code !== "")
+            level.sprites.push(spriteConstructor(code, x * 16, y * 16));
+        y = (y + 1) % CH;
+        x += Math.floor((y + 1) / CH);
+    });
 };
 
 /**
@@ -738,46 +801,27 @@ function loadCode() {
  */
 function testLevel() {
     level.tiles = [[]];
-    floor = 8;
+    floor = CH;
     ceiling = 0;
     for(var x = 0; x < 40; x++) {
-        for(var y = floor + randInt(-3, 2); y < 10; y++) {
+        for(var y = floor + randInt(-4, 0); y < CH; y++) {
             if(!level.tiles[x]) {
                 level.tiles[x] = [];
             }
-            level.tiles[x][y] = new ConnectedTile(x, y, gfx.nature);
+            level.tiles[x][y] = tileConstructor("nature_ct", x, y);
             if(Math.random() < 0.20) {
-                level.tiles[x][y] = new BreakableTile(x, y, gfx.nature, 0, 7, "crate")
+                level.tiles[x][y] = tileConstructor("nature_crate", x, y, "crate");
             }
         }
         for(var y = ceiling + randInt(0, 2); y >= 0; y--) {
             if(!level.tiles[x]) {
                 level.tiles[x] = [];
             }
-            level.tiles[x][y] = new ConnectedTile(x, y, gfx.nature);
+            level.tiles[x][y] = tileConstructor("nature_ct", x, y);
         }
     }
     level.bg = new Background(gfx.bg_nature);
-    loadPlayer(1*16, 5*16);
-}
-
-/**
- * Randomly generate (not as fancy :/ ) a "level" (more like a custerfluck).
- */
-function testRandomLevel(pct) {
-    level.tiles = [[]];
-    for(var x = 0; x < 40; x++) {
-        for(var y = 0; y < 10; y++) {
-            if(Math.random() < pct) {
-                if(!level.tiles[x]) {
-                    level.tiles[x] = [];
-                }
-                level.tiles[x][y] = new ConnectedTile(x, y, gfx.nature);
-            }
-        }
-    }
-    level.bg = new Background(gfx.bg_nature_sunset);
-    loadPlayer(1*16, 5*16);
+    level.sprites.push(spriteConstructor("player", 1*16, 5*16));
 }
 
 // --- Math functions that aren't included in Javascript Math (for whatever reason). ---

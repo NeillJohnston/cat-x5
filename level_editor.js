@@ -10,9 +10,9 @@
  * @global
  */
 // Canvas default width and height in tiles.
-var CW = 10; var CH = 10;
+var CW = 12; var CH = 10;
 // Canvas default width and height in pixels.
-var CWP = 160; var CHP = 160;
+var CWP = 16 * CW; var CHP = 16 * CH;
 // Zoom (scale) level. Defines the scale of the canvas.
 var zm = 2;
 // Animation delay. Wait this many frames before the next anim step.
@@ -113,7 +113,7 @@ var pen = {
     lvlStrCode: "__",
     init: function() {
         this.type = this.types.CT;
-        this.lvlStrCode = "CN";
+        this.lvlStrCode = "nature_ct";
     },
     get: function(x, y) {
         if(this.type === this.types.T) {
@@ -398,23 +398,23 @@ function ConnectedTile(x, y, s) {
  * @constructor
  * @param {Image} s - The texture sheet to use for this background. Unlike other texture sheets, this is split into two 64x128 halves.
  */
-function Background(s) {
-    this.xf = 0; this.yf = 32;
-    this.xb = 0; this.yb = 0;
-    this.s = s;
-    this.update = function() {
-        this.xf = viewArea.x / 2;
-        this.xb = viewArea.x / 4;
-        [-64, 0, 64, 128, 192].forEach( function(x) {
-            x += viewArea.x;
-            viewArea.drawImg(x - this.xb % 64, this.yb, this.s, 0, 0, 64, 128);
-        }.bind(this));
-        [-64, 0, 64, 128, 192].forEach( function(x) {
-            x += viewArea.x;
-            viewArea.drawImg(x - this.xf % 64, this.yf, this.s, 4, 0, 64, 128);
-        }.bind(this));
-    };
-}
+ function Background(s) {
+     this.xf = 0; this.yf = CHP - 128;
+     this.xb = 0; this.yb = 0;
+     this.s = s;
+     this.update = function() {
+         this.xf = viewArea.x / 2;
+         this.xb = viewArea.x / 4;
+         for(var x = -64; x <= CWP + 64; x += 64) {
+             x_ = x + viewArea.x;
+             viewArea.drawImg(x_ - this.xb % 64, this.yb, this.s, 0, 0, 64, 128);
+         }
+         for(var x = -64; x <= CWP + 64; x += 64) {
+             x_ = x + viewArea.x;
+             viewArea.drawImg(x_ - this.xf % 64, this.yf, this.s, 4, 0, 64, 128);
+         }
+     };
+ }
 
 // --- Editor-specific components. ---
 
@@ -469,26 +469,23 @@ function MenuChild(str, onClick) {
     this.onClick = onClick;
 }
 m = new Menu([
-    new MenuChild("Nature_Ctd", function() {
+    new MenuChild("Nature ConnectedTile", function() {
         pen.type = pen.types.CT;
         pen.s = gfx.nature;
-        pen.lvlStrCode = "CN";
+        pen.lvlStrCode = "nature_ct";
     }),
     new MenuChild("Crate", function() {
         pen.type = pen.types.T
         pen.s = gfx.nature;
         pen.sx = 0; pen.sy = 7;
-        pen.lvlStrCode = "BC";
+        pen.lvlStrCode = "nature_crate";
     }),
     new MenuChild("Player", function() {
         pen.type = pen.types.S;
         pen.s = gfx.cat;
         pen.sx = 1; pen.sy = 0;
-        pen.lvlStrCode = "SP";
+        pen.lvlStrCode = "player";
     }),
-    new MenuChild("Block4", function() {}),
-    new MenuChild("Block5", function() {}),
-    new MenuChild("Block6", function() {}),
 ]);
 
 /**
@@ -496,10 +493,10 @@ m = new Menu([
  */
 var grid = {
     update: function() {
-        for(var x = 0; x < 11; x++) {
+        for(var x = 0; x < CW + 1; x++) {
             viewArea.drawLine(x * 16 - viewArea.x % 16, 0, x * 16 - viewArea.x % 16, CHP);
         }
-        for(var y = 0; y < 11; y++) {
+        for(var y = 0; y < CH + 1; y++) {
             viewArea.drawLine(0, y * 16, CWP, y * 16);
         }
     }
@@ -603,25 +600,34 @@ function loadImage(src) {
  */
 function generateCode() {
     lvlStr = level.w + "," + level.h + "\n";
+    lastTile = "_";
+    lastTileCount = 0;
     for(var x = 0; x < level.w; x++) {
         if(!level.tiles[x])
             level.tiles[x] = [];
         for(var y = 0; y < level.h; y++) {
-            if(level.tiles[x][y])
-                lvlStr += level.tiles[x][y].lvlStrCode;
-            else
-                lvlStr += "__";
+            t = level.tiles[x][y];
+            if(!t) {
+                t = new Tile();
+                t.lvlStrCode = "_";
+            }
+            if(t.lvlStrCode === lastTile) {
+                lastTileCount++;
+            } else {
+                lvlStr += lastTile + "*" + lastTileCount + ",";
+                lastTile = t.lvlStrCode;
+                lastTileCount = 1;
+            }
         }
     }
-    lvlStr += "\n";
+    lvlStr += lastTile + "*" + lastTileCount + "\n";
     for(var x = 0; x < level.w; x++) {
         if(!level.sprites[x])
             level.sprites[x] = [];
         for(var y = 0; y < level.h; y++) {
             if(level.sprites[x][y])
                 lvlStr += level.sprites[x][y].lvlStrCode;
-            else
-                lvlStr += "__";
+            lvlStr += ",";
         }
     }
     // Insert the new code.

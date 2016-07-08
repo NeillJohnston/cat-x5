@@ -22,7 +22,7 @@ p {
 }
 textarea#level-code {
     font-family: "Courier New", monospace;
-    font-size: 8px;
+    font-size: 10px;
     word-wrap: break-word;
     padding: 10px;
     border: 1px solid #999999;
