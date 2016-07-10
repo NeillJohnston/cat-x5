@@ -35,7 +35,17 @@ a {
     margin: inherit;
 }
 canvas#game {
+    font-family: "Coders-Crux";
     border: 1px solid #999999;
     background-color: #FFFFFF;
     margin: inherit;
+}
+
+@font-face {
+    font-family: "Coders-Crux";
+    src: url("font/coders_crux.otf");
+    src: url("font/coders_crux.eot") format("embedded-opentype"),
+        url("font/coders_crux.woff") format("woff"),
+        url("font/coders_crux.ttf") format("truetype"),
+        url("font/coders_crux.svg") format("svg");
 }

@@ -435,25 +435,28 @@ function Menu(children) {
         if(this.toggled) {
             ctx = gameArea.ctx;
             ctx.beginPath();
-            ctx.rect(8 * zm, 8 * zm, (CWP - 16) * zm, (CHP - 16) * zm);
-            ctx.fillStyle = "#090909";
+            ctx.rect(0, 0, CWP * zm, CHP * zm);
+            ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
             ctx.fill();
-            for(var i = 0; i < this.children.length; i++) {
+            yPos = Math.floor(((gameArea.my - 16) * zm) / (8 * zm));
+            if(this.children[yPos]) {
+                if(gameArea.m)
+                    children[yPos].onClick();
+                ctx.beginPath();
+                ctx.rect(0, 16 * zm + yPos * 8 * zm, CWP * zm, 8 * zm);
+                ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+                ctx.fill();
+            }
+            for(i in this.children) {
                 c = this.children[i];
                 c.x =  16 * zm;
                 c.y = (24 + i * 8) * zm;
                 c.w = (CWP - 32) * zm;
                 c.h = 8 * zm;
-                ctx.font = 8 * zm + "px Courier New";
+                ctx.font = 12 * zm + "px Coders-Crux";
                 ctx.fillStyle = "#FFFFFF";
-                ctx.fillText(c.str, c.x, c.y);
+                ctx.fillText(c.str, c.x, c.y - zm);
             };
-            mxGrid = Math.floor(((gameArea.mx - 16) * zm) / ((CWP - 32) * zm));
-            myGrid = Math.floor(((gameArea.my - 16) * zm) / (8 * zm));
-            if(mxGrid === 0 && this.children[myGrid]) {
-                if(gameArea.m)
-                    children[myGrid].onClick.call();
-            }
         }
     };
 }
@@ -480,6 +483,18 @@ m = new Menu([
         pen.sx = 0; pen.sy = 7;
         pen.lvlStrCode = "nature_crate";
     }),
+    new MenuChild("Player", function() {
+        pen.type = pen.types.S;
+        pen.s = gfx.cat;
+        pen.sx = 1; pen.sy = 0;
+        pen.lvlStrCode = "player";
+    }),
+    new MenuChild("Next ->", function() {
+        m_.toggle();
+        m.toggle();
+    }),
+]);
+m_ = new Menu([
     new MenuChild("Player", function() {
         pen.type = pen.types.S;
         pen.s = gfx.cat;
@@ -549,6 +564,7 @@ function update() {
         m.canToggle = true;
     }
     m.update();
+    m_.update();
     if(gameArea.keys && gameArea.keys[ct.code]) {
         generateCode();
     }
