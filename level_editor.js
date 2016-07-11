@@ -23,12 +23,14 @@ var sc = 0;
 var kc = {
     w: 87, a: 65, s: 83, d: 68,
     shift: 16, space: 32,
+    _1: 49, _2: 50,
     x: 88,
 };
 // Controls settings. All variables here should reference kc.
 var ct = {
     left: kc.a, right: kc.d, up: kc.w, down: kc.s,
     fastscroll: kc.shift,
+    tilemode: kc._1, spritemode: kc._2,
     del: kc.x,
     code: kc.space,
 };
@@ -100,36 +102,19 @@ var pen = {
     /**
      * Enum-fashioned values for convenience.
      */
-    types: {
+    modes: {
         T: "Tile",
-        CT: "ConnectedTile",
         S: "Sprite",
+        DT: "DeleteTile",
+        DS: "DeleteSprite",
+        M: "Menu",
     },
     // The rest.
-    type: false,
-    s: gfx.nature,
-    sx: 0,
-    sy: 0,
-    lvlStrCode: "__",
+    mode: false,
+    lvlStrCode: "_",
     init: function() {
-        this.type = this.types.CT;
+        this.mode = this.modes.T;
         this.lvlStrCode = "nature_ct";
-    },
-    get: function(x, y) {
-        if(this.type === this.types.T) {
-            t = new Tile(x, y, this.s, this.sx, this.sy)
-            t.lvlStrCode = this.lvlStrCode;
-            return t;
-        } else if(this.type === this.types.CT) {
-            t = new ConnectedTile(x, y, this.s);
-            t.lvlStrCode = this.lvlStrCode;
-            return t;
-        }
-        else if(this.type === this.types.S) {
-            s = new Sprite(x, y, this.s, this.sx, this.sy);
-            s.lvlStrCode = this.lvlStrCode;
-            return s;
-        }
     },
 };
 pen.init();
@@ -161,6 +146,7 @@ var gameArea = {
         });
         window.addEventListener("keyup", function(evt) {
             gameArea.keys[evt.keyCode] = false;
+            gameArea.notifyKeyUp.notify(evt.keyCode);
         });
         window.addEventListener("mousemove", function(evt) {
             bounds = gameArea.canvas.getBoundingClientRect();
@@ -184,15 +170,37 @@ var gameArea = {
             }
         });
         window.addEventListener("mouseup", function(evt) {
-            if(evt.button === 0)
+            if(evt.button === 0) {
                 gameArea.m = false;
-            else if(evt.button === 2)
+                gameArea.notifyKeyUp.notify(gameArea.notifyKeyUp.MOUSE_LEFT);
+            }
+            else if(evt.button === 2) {
                 gameArea.mrt = false;
+                gameArea.notifyKeyUp.notify(gameArea.notifyKeyUp.MOUSE_RIGHT);
+            }
         });
         window.addEventListener("contextmenu", function(evt) {
             evt.preventDefault();
         });
-    }
+    },
+    /**
+     * An object that gets notified when a specified key or button is released.
+     */
+    notifyKeyUp: {
+        MOUSE_LEFT: 1000,
+        MOUSE_MIDDLE: 1001,
+        MOUSE_RIGHT: 1002,
+        attachments: [],
+        attach: function(keyCode, callback) {
+            this.attachments.push({"keyCode": keyCode, "callback": callback});
+        },
+        notify: function(keyCode) {
+            this.attachments.forEach( function(a) {
+                if(a.keyCode === keyCode)
+                    a.callback();
+            });
+        },
+    },
 };
 
 /**
@@ -416,6 +424,45 @@ function ConnectedTile(x, y, s) {
      };
  }
 
+ /**
+  * Construct default tiles. "Editor" versions of the tiles are returned.
+  * Not exactly the same as the one in engine.js, might be streamlined + cleaned later.
+  * @constructor
+  * @param {String} t - The type to use from within the tileTypes var.
+  * @param {Number} x - Tile coordinates.
+  * @param {Number} y - Tile coordinates.
+  * @param extra - Just in case.
+  */
+function tileConstructor(t, x, y, extra) {
+    tileTypes = {
+         nature_ct: function(x, y) {
+            return new ConnectedTile(x, y, gfx.nature);
+        },
+        nature_crate: function(x, y, breakableType) {
+            return new Tile(x, y, gfx.nature, 0, 7);
+        },
+        _ : function(x, y) { return new Tile(x, y, gfx._, 0, 0); },
+    }
+    return tileTypes[t](x, y, extra);
+}
+
+/**
+ * Construct default sprites.
+ * @constructor
+ * @param {String} t - The type to use from within the spriteTypes var.
+ * @param {Number} x - Tile coordinates.
+ * @param {Number} y - Tile coordinates.
+ * @param extra - Just in case.
+ */
+function spriteConstructor(t, x, y, extra) {
+    spriteTypes = {
+        player: function(x, y) {
+            return new Sprite(x, y, gfx.cat, 1, 0);
+        }
+    };
+    return spriteTypes[t](x, y, extra);
+}
+
 // --- Editor-specific components. ---
 
 /**
@@ -424,40 +471,36 @@ function ConnectedTile(x, y, s) {
  * @constructor
  * @param {Array} children - An array of MenuChild objects.
  */
-function Menu(children) {
-    this.toggled = false;
-    this.canToggle = true;
+function Menu(title, children) {
+    this.title = title;
     this.children = children;
-    this.toggle = function() {
-        this.toggled = !this.toggled;
-    };
     this.update = function() {
-        if(this.toggled) {
-            ctx = gameArea.ctx;
+        ctx = gameArea.ctx;
+        ctx.beginPath();
+        ctx.rect(0, 0, CWP * zm, CHP * zm);
+        ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+        ctx.fill();
+        yPos = Math.floor(((gameArea.my - 16) * zm) / (8 * zm));
+        if(this.children[yPos]) {
+            if(gameArea.m)
+                children[yPos].onClick();
             ctx.beginPath();
-            ctx.rect(0, 0, CWP * zm, CHP * zm);
+            ctx.rect(0, 16 * zm + yPos * 8 * zm, CWP * zm, 8 * zm);
             ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
             ctx.fill();
-            yPos = Math.floor(((gameArea.my - 16) * zm) / (8 * zm));
-            if(this.children[yPos]) {
-                if(gameArea.m)
-                    children[yPos].onClick();
-                ctx.beginPath();
-                ctx.rect(0, 16 * zm + yPos * 8 * zm, CWP * zm, 8 * zm);
-                ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
-                ctx.fill();
-            }
-            for(i in this.children) {
-                c = this.children[i];
-                c.x =  16 * zm;
-                c.y = (24 + i * 8) * zm;
-                c.w = (CWP - 32) * zm;
-                c.h = 8 * zm;
-                ctx.font = 12 * zm + "px Coders-Crux";
-                ctx.fillStyle = "#FFFFFF";
-                ctx.fillText(c.str, c.x, c.y - zm);
-            };
         }
+        ctx.font = 12 * zm + "px Coders-Crux";
+        ctx.fillStyle = "#FFFFFF";
+        for(i in this.children) {
+            c = this.children[i];
+            c.x =  16 * zm;
+            c.y = (24 + i * 8) * zm;
+            c.w = (CWP - 32) * zm;
+            c.h = 8 * zm;
+            ctx.fillText(c.str, c.x, c.y - zm);
+        };
+        ctx.font = 24 * zm + "px Coders-Crux";
+        ctx.fillText(this.title, 16 * zm, 14 * zm);
     };
 }
 
@@ -471,37 +514,66 @@ function MenuChild(str, onClick) {
     this.str = str;
     this.onClick = onClick;
 }
-m = new Menu([
-    new MenuChild("Nature ConnectedTile", function() {
-        pen.type = pen.types.CT;
-        pen.s = gfx.nature;
-        pen.lvlStrCode = "nature_ct";
-    }),
-    new MenuChild("Crate", function() {
-        pen.type = pen.types.T
-        pen.s = gfx.nature;
-        pen.sx = 0; pen.sy = 7;
-        pen.lvlStrCode = "nature_crate";
-    }),
-    new MenuChild("Player", function() {
-        pen.type = pen.types.S;
-        pen.s = gfx.cat;
-        pen.sx = 1; pen.sy = 0;
-        pen.lvlStrCode = "player";
-    }),
-    new MenuChild("Next ->", function() {
-        m_.toggle();
-        m.toggle();
-    }),
-]);
-m_ = new Menu([
-    new MenuChild("Player", function() {
-        pen.type = pen.types.S;
-        pen.s = gfx.cat;
-        pen.sx = 1; pen.sy = 0;
-        pen.lvlStrCode = "player";
-    }),
-]);
+
+/**
+ * An object that manages all the different menues.
+ */
+var menuManager = {
+    menus: {
+        tile: new Menu("Tiles", [
+            new MenuChild("Nature - Connected Tile", function() {
+                pen.lvlStrCode = "nature_ct";
+            }),
+            new MenuChild("Breakable Crate", function() {
+                pen.lvlStrCode = "nature_crate";
+            }),
+        ]),
+        sprite: new Menu("Sprites", [
+            new MenuChild("Player", function() {
+                pen.lvlStrCode = "player";
+            }),
+        ]),
+    },
+    open: function(m) {
+        if(this.currentMenu === this.menus[m])
+            this.currentMenu = false;
+        else
+            this.currentMenu = this.menus[m];
+    },
+    close: function(m) {
+        if(this.currentMenu === this.menus[m])
+            this.currentMenu = false;
+    },
+    update: function() {
+        if(this.currentMenu)
+            this.currentMenu.update();
+    },
+};
+gameArea.notifyKeyUp.attach(gameArea.notifyKeyUp.MOUSE_RIGHT,
+    function() {
+        if(pen.mode !== pen.modes.M) {
+            if(pen.mode === pen.modes.T)
+                menuManager.open("tile");
+            else if(pen.mode === pen.modes.S)
+                menuManager.open("sprite");
+            pen.savestate = pen.mode;
+            pen.mode = pen.modes.M;
+        } else {
+            menuManager.close("tile");
+            menuManager.close("sprite");
+            if(pen.savestate)
+                pen.mode = pen.savestate;
+        }
+    }
+);
+gameArea.notifyKeyUp.attach(gameArea.notifyKeyUp.MOUSE_LEFT,
+    function() {
+        menuManager.close("tile");
+        menuManager.close("sprite");
+        if(pen.savestate)
+            pen.mode = pen.savestate;
+    }
+);
 
 /**
  * A grid to be displayed over the canvas.
@@ -532,6 +604,8 @@ function update() {
         x.forEach( function(y) {
             if(y.update)
                 y.update();
+            if(y.connected)
+                y.updateTexture();
         });
     });
     level.sprites.forEach( function(x) {
@@ -542,29 +616,38 @@ function update() {
         });
     });
     grid.update();
-    if(gameArea.m && !m.toggled) {
+    if(gameArea.keys && gameArea.keys[ct.del]) {
+        if(pen.mode === pen.modes.T)
+            pen.mode = pen.modes.DT;
+        else if(pen.mode === pen.modes.S)
+            pen.mode = pen.modes.DS;
+    } else {
+        if(pen.mode === pen.modes.DT)
+            pen.mode = pen.modes.T;
+        else if(pen.mode === pen.modes.DS)
+            pen.mode = pen.modes.S;
+    }
+    if(gameArea.m) {
         x = Math.floor((gameArea.mx + viewArea.x) / 16);
         y = Math.floor((gameArea.my + viewArea.y) / 16);
-        if(!(gameArea.keys && gameArea.keys[ct.del])) {
-            if(pen.type === pen.types.CT || pen.type === pen.types.T)
-                level.placeTile(x, y, pen.get(x, y));
-            else if(pen.type === pen.types.S)
-                level.placeSprite(x, y, pen.get(x, y));
-        } else {
-            if(pen.type === pen.types.CT || pen.type === pen.types.T)
+        switch(pen.mode) {
+            case pen.modes.T:
+                level.placeTile(x, y, tileConstructor(pen.lvlStrCode, x, y));
+                break;
+            case pen.modes.S:
+                level.placeSprite(x, y, spriteConstructor(pen.lvlStrCode, x, y));
+                break;
+            case pen.modes.DT:
                 level.removeTile(x, y);
-            else if(pen.type === pen.types.S)
+                break;
+            case pen.modes.DS:
                 level.removeSprite(x, y);
+                break;
+            case pen.modes.M:
+                break;
         }
     }
-    if(gameArea.mrt && m.canToggle) {
-        m.toggle();
-        m.canToggle = false;
-    } else if(!gameArea.mrt) {
-        m.canToggle = true;
-    }
-    m.update();
-    m_.update();
+    menuManager.update();
     if(gameArea.keys && gameArea.keys[ct.code]) {
         generateCode();
     }
@@ -683,3 +766,14 @@ function accelTo(n, max, a) {
     }
     return n;
 }
+
+// --- Onload-exec stuff. ---
+
+gameArea.notifyKeyUp.attach(ct.tilemode, function() {
+    if(pen.mode !== pen.modes.M)
+        pen.mode = pen.modes.T;
+});
+gameArea.notifyKeyUp.attach(ct.spritemode, function() {
+    if(pen.mode !== pen.modes.M)
+        pen.mode = pen.modes.S;
+});
