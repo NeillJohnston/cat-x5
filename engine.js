@@ -104,6 +104,14 @@ var gameArea = {
 };
 
 /**
+ * Notifies about controller states.
+ * @constructor
+ */
+function Controller() {
+
+}
+
+/**
  * "Camera" object, follows the player around and draws graphics to the canvas accordingly.
  */
 var viewArea = {
@@ -116,12 +124,10 @@ var viewArea = {
     drawImg: function(x, y, s, sx, sy, w, h) {
         ctx = gameArea.ctx;
         ctx.imageSmoothingEnabled = false;
-        if(!w) {
+        if(!w)
             w = 16;
-        }
-        if(!h) {
+        if(!h)
             h = 16;
-        }
         ctx.drawImage(s, sx * 16, sy * 16, w, h,
                 x * zm - this.x * zm, y * zm - this.y * zm, w * zm, h * zm
         );
@@ -185,22 +191,38 @@ function Sprite(x, y, s, sx, sy) {
     this.sy = sy;
     this.w = 16;
     this.h = 16;
+    this.hb = {
+        x: this.x, y: this.y,
+        w: this.w, h: this.h,
+        xOff: 0, yOff: 0,
+    };
+    this.isCollideable = true;
     this.animLoop = [[sx, sy]];
     this.animIndex = 0;
     this.animSC = sc;
     this.dx = 0;
     this.dy = 0;
-    this.hb = {
-        x: 0, y: 0,
-        w: 16, h: 16
-    };
     /* Update the sprite: update position, redraw graphics and animate.
      * Calls updateExtra to aid in creating new sprites. */
     this.update = function() {
         this.x = this.x + this.dx;
         this.y = this.y + this.dy;
+        this.hb.x = this.x + this.hb.xOff;
+        this.hb.y = this.y + this.hb.yOff;
         this.dx = Math.round(this.dx * 100) / 100;
         this.dy = Math.round(this.dy * 100) / 100;
+        // Get tiles that may possibly be colliding with the sprite.
+        c = getCorners(this.hb);
+        c.forEach( function(t) {
+            if(t) {
+                colObj = col(this.hb, t.hb);
+                if(colObj && t.action === true) {
+                    t.respond(this);
+                }
+                if(colObj && this.isCollideable) {
+                }
+            }
+        }.bind(this));
         this.updateExtra();
         viewArea.drawImg(this.x, this.y, this.s, this.sx, this.sy);
         // Update animation loop.
@@ -229,6 +251,7 @@ function Sprite(x, y, s, sx, sy) {
  */
 function Particle(x, y, s, animLoop) {
     p = new Sprite(x, y, s, animLoop[0][0], animLoop[0][1]);
+    p.isCollideable = false;
     p.animLoop = animLoop;
     p.update = function() {
         viewArea.drawImg(this.x, this.y, this.s, this.sx, this.sy);
@@ -266,7 +289,7 @@ function Tile(x, y, s, sx, sy) {
     this.w = 16;
     this.h = 16;
     this.hb = {
-        x: 0, y: 0,
+        x: this.x, y: this.y,
         w: this.w, h: this.h
     };
     this.animLoop = [[sx, sy]];
@@ -295,13 +318,13 @@ function Tile(x, y, s, sx, sy) {
  * @param {Number} y - Tiles coordinates.
  * @param {Image} s - Texture sheet to use, should be from gfx.
  */
-function ConnectedTile(x, y, s) {
+ function ConnectedTile(x, y, s) {
+    this.connected = true;
     /* A var containing possible strings for the connected textures.
      * Looking at a corner (one-fourth) of a tile:
      * c: a corner, h: a horizontal line side, v: a vertical line side,
      * i: an inset corner, and n: (nothing) blank dirt.
      * To make the codes below, start at the top left corner and go clcokwise. */
-    this.connected = true;
     connectionMap = {
         "chnv": [0, 0], "hhnn": [1, 0], "hcvn": [2, 0], "nnin": [3, 0], "nnni": [4, 0], "chiv": [5, 0], "hcvi": [6, 0], "ccvv": [7, 0],
         "vnnv": [0, 1], "nnnn": [1, 1], "nvvn": [2, 1], "ninn": [3, 1], "innn": [4, 1], "vihc": [5, 1], "ivch": [6, 1], "vvvv": [7, 1],
@@ -315,7 +338,7 @@ function ConnectedTile(x, y, s) {
     this.sx = false; this.sy = false;
     this.w = 16; this.h = 16;
     this.hb = {
-        x: 0, y: 0,
+        x: this.x, y: this.y,
         w: this.w, h: this.h
     };
     this.updated = false;
@@ -371,7 +394,7 @@ function ConnectedTile(x, y, s) {
  * @param {Image} s - Texture sheet to use, should be from gfx.
  * @param {Number} sx - Grid coordinates of the texture in the graphics sheet.
  * @param {Number} sy - Grid coordinates of the texture in the graphics sheet.
- * @param blockType
+ * @param {Function} onBreak - What to do when this tile is broken.
  */
 function BreakableTile(x, y, s, sx, sy, onBreak) {
     // Create the tile.
@@ -382,6 +405,52 @@ function BreakableTile(x, y, s, sx, sy, onBreak) {
         onBreak(this);
         level.tiles[Math.floor(this.x / 16)][Math.floor(this.y / 16)] = false;
     };
+    return t;
+}
+
+/**
+ * A tile that does something when collided with by a sprite.
+ * @constructor
+ * @param {Number} x - Tile coordinates. By default tile coord values are 1/16 of normal coords.
+ * @param {Number} y - Tiles coordinates.
+ * @param {Image} s - Texture sheet to use, should be from gfx.
+ * @param {Number} sx - Grid coordinates of the texture in the graphics sheet.
+ * @param {Number} sy - Grid coordinates of the texture in the graphics sheet.
+ * @param {Object} colActions - Object that contains callback functions for the various sides.
+ * @return {Tile} Returns itself, a new tile with new properties.
+ */
+function ActionTile(x, y, s, sx, sy, colActions) {
+    // Create the tile.
+    t = new Tile(x, y, s, sx, sy);
+    t.action = true;
+    t.colActions = colActions;
+    /**
+     * Respond to a collision appropriately.
+     * @param {Sprite} s - Sprite colliding with the object.
+     */
+    t.respond = function(s) {
+        colObj = col(s, this);
+        if(colObj) {
+            switch(Math.max(colObj.upper, colObj.lower, colObj.left, colObj.right)) {
+                case colObj.upper:
+                    if(this.colActions.upper)
+                        this.colActions.upper(s);
+                    break;
+                case colObj.lower:
+                    if(this.colActions.lower)
+                        this.colActions.lower(s);
+                    break;
+                case colObj.left:
+                    if(this.colActions.left)
+                        this.colActions.left(s);
+                    break;
+                case colObj.right:
+                    if(this.colActions.right)
+                        this.colActions.right(s);
+                    break;
+            }
+        }
+    }.bind(t);
     return t;
 }
 
@@ -428,6 +497,14 @@ function tileConstructor(t, x, y, extra) {
                 level.sprites.push(particleConstructor("crateDestroy", t.x, t.y));
             });
         },
+        nature_spike: function(x, y) {
+            return new ActionTile(x, y, gfx.nature, 2, 6, {
+                upper: function(s) { s.dy = -4; },
+                lower: function(s) { s.dy = 4; },
+                left: function(s) { s.dx = -4; },
+                right: function(s) { s.dx = 4; },
+            });
+        },
         _ : function(x, y) { return new Tile(x, y, gfx._, 0, 0); },
     }
     return tileTypes[t](x, y, extra);
@@ -447,8 +524,9 @@ function spriteConstructor(t, x, y, extra) {
             p = new Sprite(x, y, gfx.cat, 0, 0);
             p.ox = x; p.oy = y;
             p.hb = {
-                x: 1, y: 4,
-                w: 14, h: 12
+                x: x, y: y,
+                w: 14, h: 12,
+                xOff: 1, yOff: 4,
             };
             p.animLoop = [[0, 0], [0, 0], [0, 1], [0, 1]];
             p.facing = "right";
@@ -464,6 +542,7 @@ function spriteConstructor(t, x, y, extra) {
              */
             p.shoot = function(t) {
                 laser = new Sprite(this.x, this.y, gfx.cat, 2, 4);
+                laser.isCollideable = false;
                 level.sprites.push(laser);
                 laser.hb = {
                     x: 6, y: 6,
@@ -494,27 +573,6 @@ function spriteConstructor(t, x, y, extra) {
              * Player's updateExtra controls most of its functionality.
              */
             p.updateExtra = function() {
-                // Check for collisions with tiles.
-                getNeighbors(Math.floor(this.x / 16), Math.floor(this.y / 16))
-                        .forEach( function(t) {
-                    colObj = col(this, t);
-                    if(colObj) {
-                        minSide = Math.min(colObj.left, colObj.right, colObj.upper, colObj.lower);
-                        if(minSide === colObj.upper && this.dy < 0 && Math.abs(colObj.upper - Math.min(colObj.left, colObj.right)) > .5) {
-                            this.dy = 0;
-                            this.y += minSide;
-                        } else if(minSide === colObj.lower && this.dy > 0) {
-                            this.dy = 0;
-                            this.y += -minSide;
-                        } else if(minSide === colObj.left && this.dx < 0) {
-                            this.dx = 0;
-                            this.x += minSide;
-                        } else if(minSide === colObj.right && this.dx > 0) {
-                            this.dx = 0;
-                            this.x += -minSide;
-                        }
-                    }
-                }.bind(this));
                 // Handle [run] key.
                 if(gameArea.keys && gameArea.keys[ct.run])
                     this.running = true;
@@ -684,35 +742,42 @@ function getNeighbors(x, y, s) {
 }
 
 /**
- * Check collisions between two objects, AABB style.
- * @param {Object} a - One object being checked for collisions. Needs to include a.x, a.y, a.w, and a.h.
- * @param {Object} a.hb - Optional hitbox of a. The next few params explain how it works.
- * @param {Number} a.hb.x - Horizontal displacement of the rectangular hitbox from a.x.
- * @param {Number} a.hb.y - Vertical displacement of the rectangular hitbox from a.y.
- * @param {Number} a.hb.w - Width of the hitbox.
- * @param {Number} a.hb.h - Height of the hitbox.
- * @param {Object} b - The other object to check for collisions. Exactly the same requirements as a.
- * @returns {Object|undefined} Either an object containing .left, .right, .upper, and .lower (the "distance" of the collision) or nothing, if no collision took place.
+ * Return tiles at the corner of the specified hitbox. Used for sprite collisions.
+ * @param {Object} hb - A standard hitbox, containing x, y, w, and h.
+ * @return {Array} An array of tiles that intersect the hitbox's corners.
+ */
+function getCorners(hb) {
+    xEnd = Math.floor((hb.x + hb.w) / 16);
+    yEnd = Math.floor((hb.y + hb.h) / 16);
+    x = Math.floor(hb.x / 16);
+    y = Math.floor(hb.y / 16);
+    corners = [];
+    [[x, y], [xEnd, y], [x, yEnd], [xEnd, yEnd]].forEach( function(c) {
+        if(level.tiles[c[0]])
+            corners.push(level.tiles[c[0]][c[1]]);
+        else
+            corners.push(false);
+    });
+    return corners;
+}
+
+/**
+ * Check collisions between two hitboxes, AABB style.
+ * @param {Object} a - First hitbox.
+ * @param {Object} b - Second hitbox.
+ * @return {Object} Undefined if no collision or an object detailing each side of the collision.
  */
 function col(a, b) {
     ax = a.x; ay = a.y;
     aw = a.w; ah = a.h;
     bx = b.x; by = b.y;
     bw = b.w; bh = b.h;
-    if(a.hb) {
-        ax += a.hb.x; ay += a.hb.y;
-        aw = a.hb.w; ah = a.hb.h;
-    }
-    if(b.hb) {
-        bx += b.hb.x; by += b.hb.y;
-        bw = b.hb.w; bh = b.hb.h;
-    }
     left = (ax < bx + bw); right = (ax + aw > bx);
     upper = (ay < by + bh); lower = (ay + ah > by);
     if(left && right && upper && lower) {
         return {
-            left: bx + bw - ax, right: ax + aw - bx,
-            upper: by + bh - ay, lower: ay + ah - by
+            left: ax - (bx + bw), right: (ax + aw) - bx,
+            upper: ay - (by + bh), lower: (ay + ah) - by,
         };
     }
 }
@@ -811,6 +876,9 @@ function testLevel() {
             level.tiles[x][y] = tileConstructor("nature_ct", x, y);
             if(Math.random() < 0.20) {
                 level.tiles[x][y] = tileConstructor("nature_crate", x, y, "crate");
+            }
+            if(Math.random() < 0.30) {
+                level.tiles[x][y] = tileConstructor("nature_spike", x, y);
             }
         }
         for(var y = ceiling + randInt(0, 2); y >= 0; y--) {

@@ -258,6 +258,31 @@ var viewArea = {
     }
 };
 
+/**
+ * Displays important game messages.
+ */
+var con = {
+    last: 0,
+    stack: [],
+    log: function(str) {
+        this.stack.push({"str": str, "time": sc});
+    },
+    update: function() {
+        ctx = gameArea.ctx;
+        ctx.beginPath();
+        ctx.font = 6 * zm + "px Coders-Crux";
+        ctx.fillStyle = "#FFFFFF";
+        display = [];
+        for(var i = 0; i < this.stack.length; i++) {
+            if(this.stack[i].time + 3 * 60 > sc)
+                display.push(this.stack[i].str);
+        }
+        for(var i in display) {
+            ctx.fillText(display[i], 0, 4 * zm + 4 * zm * i);
+        }
+    }
+};
+
 // --- "Editor versions" of the components to the game. ---
 
 /**
@@ -441,6 +466,9 @@ function tileConstructor(t, x, y, extra) {
         nature_crate: function(x, y, breakableType) {
             return new Tile(x, y, gfx.nature, 0, 7);
         },
+        nature_spike: function(x, y) {
+            return new Tile(x, y, gfx.nature, 1, 6);
+        },
         _ : function(x, y) { return new Tile(x, y, gfx._, 0, 0); },
     }
     return tileTypes[t](x, y, extra);
@@ -494,10 +522,10 @@ function Menu(title, children) {
         for(i in this.children) {
             c = this.children[i];
             c.x =  16 * zm;
-            c.y = (24 + i * 8) * zm;
+            c.y = (23 + i * 8) * zm;
             c.w = (CWP - 32) * zm;
             c.h = 8 * zm;
-            ctx.fillText(c.str, c.x, c.y - zm);
+            ctx.fillText(c.str, c.x, c.y);
         };
         ctx.font = 24 * zm + "px Coders-Crux";
         ctx.fillText(this.title, 16 * zm, 14 * zm);
@@ -526,6 +554,9 @@ var menuManager = {
             }),
             new MenuChild("Breakable Crate", function() {
                 pen.lvlStrCode = "nature_crate";
+            }),
+            new MenuChild("Spikes", function() {
+                pen.lvlStrCode = "nature_spike";
             }),
         ]),
         sprite: new Menu("Sprites", [
@@ -616,6 +647,7 @@ function update() {
         });
     });
     grid.update();
+    con.update();
     if(gameArea.keys && gameArea.keys[ct.del]) {
         if(pen.mode === pen.modes.T)
             pen.mode = pen.modes.DT;
@@ -632,10 +664,14 @@ function update() {
         y = Math.floor((gameArea.my + viewArea.y) / 16);
         switch(pen.mode) {
             case pen.modes.T:
-                level.placeTile(x, y, tileConstructor(pen.lvlStrCode, x, y));
+                t = tileConstructor(pen.lvlStrCode, x, y)
+                t.lvlStrCode = pen.lvlStrCode;
+                level.placeTile(x, y, t);
                 break;
             case pen.modes.S:
-                level.placeSprite(x, y, spriteConstructor(pen.lvlStrCode, x, y));
+                s = spriteConstructor(pen.lvlStrCode, x, y);
+                s.lvlStrCode = pen.lvlStrCode;
+                level.placeSprite(x, y, s);
                 break;
             case pen.modes.DT:
                 level.removeTile(x, y);
@@ -770,10 +806,16 @@ function accelTo(n, max, a) {
 // --- Onload-exec stuff. ---
 
 gameArea.notifyKeyUp.attach(ct.tilemode, function() {
-    if(pen.mode !== pen.modes.M)
+    if(pen.mode !== pen.modes.M) {
         pen.mode = pen.modes.T;
+        con.log("pen is in tile mode");
+    }
 });
 gameArea.notifyKeyUp.attach(ct.spritemode, function() {
-    if(pen.mode !== pen.modes.M)
+    if(pen.mode !== pen.modes.M) {
         pen.mode = pen.modes.S;
+        con.log("pen is in sprite mode");
+    }
 });
+
+con.log("Loaded!");
