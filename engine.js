@@ -1,3 +1,11 @@
+// --- Note to self ---
+
+/* This version is the TOTAL ENGINE REWRITE VERSION, in which I try to fix all of the issues such as magic numbers and not using the correct constructor functions.
+ * Probably time consuming, but it will also be worth it once I can standardize things.
+ * Also, rewrite means significant chunks of code being replaced. Not everything, but manything.
+ * :D
+ */
+
 /** ENGINE.JS
  * The thing that runs Catatatatat (C-ATx5).
  * @author Neill Johnston <neilljohnston30@gmail.com>
@@ -13,6 +21,8 @@
 var CW = 12; var CH = 10;
 // Canvas default width and height in pixels.
 var CWP = 16 * CW; var CHP = 16 * CH;
+// Delay of the game in milliseconds.
+var MS_DELAY = 16.667;
 // Zoom (scale) level. Defines the scale of the canvas.
 var zm = 2;
 // Animation delay. Wait this many frames before the next anim step.
@@ -90,7 +100,7 @@ var gameArea = {
         this.canvas.width = CWP * zm;
         this.canvas.height = CHP * zm;
         this.ctx = this.canvas.getContext("2d");
-        this.interval = setInterval(update, 16.667);
+        this.interval = setInterval(update, MS_DELAY);
         this.keys = [];
         window.addEventListener("keydown", function(evt) {
             gameArea.keys[evt.keyCode] = true;
@@ -205,12 +215,12 @@ function Sprite(x, y, s, sx, sy) {
     /* Update the sprite: update position, redraw graphics and animate.
      * Calls updateExtra to aid in creating new sprites. */
     this.update = function() {
+        this.dx = Math.round(this.dx * 100) / 100;
+        this.dy = Math.round(this.dy * 100) / 100;
         this.x = this.x + this.dx;
         this.y = this.y + this.dy;
         this.hb.x = this.x + this.hb.xOff;
         this.hb.y = this.y + this.hb.yOff;
-        this.dx = Math.round(this.dx * 100) / 100;
-        this.dy = Math.round(this.dy * 100) / 100;
         // Get tiles that may possibly be colliding with the sprite.
         c = getCorners(this.hb);
         c.forEach( function(t) {
@@ -219,7 +229,8 @@ function Sprite(x, y, s, sx, sy) {
                 if(colObj && t.action === true) {
                     t.respond(this);
                 }
-                if(colObj && this.isCollideable) {
+                // Move according to collisions.
+                if(colObj && this.isCollideable && t.solid) {
                 }
             }
         }.bind(this));
@@ -292,6 +303,7 @@ function Tile(x, y, s, sx, sy) {
         x: this.x, y: this.y,
         w: this.w, h: this.h
     };
+    this.solid = true;
     this.animLoop = [[sx, sy]];
     this.animIndex = 0;
     /* Update the tile: redraw graphics and animate. */
@@ -319,13 +331,14 @@ function Tile(x, y, s, sx, sy) {
  * @param {Image} s - Texture sheet to use, should be from gfx.
  */
  function ConnectedTile(x, y, s) {
-    this.connected = true;
+    t = new Tile(x, y, s, false, false);
+    t.connected = true;
     /* A var containing possible strings for the connected textures.
      * Looking at a corner (one-fourth) of a tile:
      * c: a corner, h: a horizontal line side, v: a vertical line side,
      * i: an inset corner, and n: (nothing) blank dirt.
      * To make the codes below, start at the top left corner and go clcokwise. */
-    connectionMap = {
+    t.connectionMap = {
         "chnv": [0, 0], "hhnn": [1, 0], "hcvn": [2, 0], "nnin": [3, 0], "nnni": [4, 0], "chiv": [5, 0], "hcvi": [6, 0], "ccvv": [7, 0],
         "vnnv": [0, 1], "nnnn": [1, 1], "nvvn": [2, 1], "ninn": [3, 1], "innn": [4, 1], "vihc": [5, 1], "ivch": [6, 1], "vvvv": [7, 1],
         "vnhc": [0, 2], "nnhh": [1, 2], "nvch": [2, 2], "cccc": [3, 2], "chhc": [4, 2], "hhhh": [5, 2], "hcch": [6, 2], "vvcc": [7, 2],
@@ -333,16 +346,8 @@ function Tile(x, y, s, sx, sy) {
         "vniv": [0, 4], "nihh": [1, 4], "vinv": [2, 4], "inhh": [3, 4], "viiv": [4, 4], "iihh": [5, 4], "niin": [6, 4], "iinn": [7, 4],
         "niii": [0, 5], "inii": [1, 5], "iiin": [2, 5], "iini": [3, 5], "inin": [4, 5], "nini": [5, 5], "iiii": [6, 5]
     };
-    this.x = x * 16; this.y = y * 16;
-    this.s = s;
-    this.sx = false; this.sy = false;
-    this.w = 16; this.h = 16;
-    this.hb = {
-        x: this.x, y: this.y,
-        w: this.w, h: this.h
-    };
-    this.updated = false;
-    this.update = function() {
+    t.updated = false;
+    t.update = function() {
         // Call a texture update on the first draw (when all the tiles are loaded to the level).
         if(!this.updated) {
             this.updateTexture();
@@ -353,7 +358,7 @@ function Tile(x, y, s, sx, sy) {
         }
     };
     /* Update the sx, sy to the correct (connected) texture. */
-    this.updateTexture = function() {
+    t.updateTexture = function() {
         n = getNeighbors(this.x / 16, this.y / 16, this.s);
         idStr = "";
         // Find the value of each corner to create the connection's id.
@@ -376,14 +381,15 @@ function Tile(x, y, s, sx, sy) {
                 idStr += "n";
             }
         });
-        if(connectionMap[idStr]) {
-            this.sx = connectionMap[idStr][0];
-            this.sy = connectionMap[idStr][1];
+        if(this.connectionMap[idStr]) {
+            this.sx = this.connectionMap[idStr][0];
+            this.sy = this.connectionMap[idStr][1];
         } else {
             this.sx = 7;
             this.sy = 5;
         }
     };
+    return t;
 }
 
 /**
